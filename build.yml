@@ -1,0 +1,52 @@
+name: Compilar base.ipa
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Compilar o app
+        run: |
+          set -e
+          mkdir -p build/Payload/App.app
+          xcrun --sdk iphoneos clang -arch arm64 -miphoneos-version-min=13.0 -fobjc-arc \
+            -framework UIKit -framework WebKit -framework Foundation \
+            -Wl,-headerpad_max_install_names \
+            -Wl,-rpath,@executable_path/Frameworks \
+            -Wl,-rpath,@executable_path \
+            -o build/Payload/App.app/App main.m
+          cat > build/Payload/App.app/Info.plist <<'PLIST'
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0"><dict>
+            <key>CFBundleExecutable</key><string>App</string>
+            <key>CFBundleIdentifier</key><string>com.local.base</string>
+            <key>CFBundleName</key><string>App</string>
+            <key>CFBundlePackageType</key><string>APPL</string>
+            <key>CFBundleVersion</key><string>1</string>
+            <key>CFBundleShortVersionString</key><string>1.0</string>
+            <key>MinimumOSVersion</key><string>13.0</string>
+          </dict></plist>
+          PLIST
+          otool -l build/Payload/App.app/App | grep -A2 LC_RPATH || true
+          cd build && zip -qr base.ipa Payload
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: base-ipa
+          path: build/base.ipa
+
+      - name: Publicar Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create "base-${{ github.run_number }}" build/base.ipa \
+            --title "base.ipa #${{ github.run_number }}" \
+            --notes "App base"
